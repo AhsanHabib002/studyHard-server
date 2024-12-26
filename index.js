@@ -50,6 +50,7 @@ async function run() {
     const assignmentCollection = client
       .db("StudyHard_database")
       .collection("assingments");
+    const submissionsCollection = client.db("StudyHard_database").collection("submissions")
     
     // auth api
     app.post('/jwt', (req, res) => {
@@ -82,6 +83,13 @@ async function run() {
         const id = req.params.id;
         const query = {_id: new ObjectId(id)};
         const result = await assignmentCollection.findOne(query);
+        res.send(result);
+    });
+
+    // Submissions Details APIS
+    app.post('/submissions',verifyToken, async(req, res) => {
+        const submissionData = req.body;
+        const result = await submissionsCollection.insertOne(submissionData);
         res.send(result);
     })
 
