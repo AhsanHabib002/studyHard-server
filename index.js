@@ -108,6 +108,37 @@ async function run() {
       }
       res.send(result);
     });
+    // all submission
+    app.get("/submission", verifyToken, async (req, res) => {
+      const cursor = submissionsCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // Submission by id
+    app.get("/submission/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await submissionsCollection.findOne(query);
+      res.send(result);
+    });
+    // update api
+
+    // all pendings
+    app.get("/pending-assignments", verifyToken, async (req, res) => {
+      const pendingAssignments = await submissionsCollection
+        .find({ status: "pending" })
+        .toArray();
+      for (const submission of pendingAssignments) {
+        const query1 = { _id: new ObjectId(submission.submit_id) };
+        const result1 = await assignmentCollection.findOne(query1);
+        if (result1) {
+          submission.title = result1.title;
+          submission.marks = result1.marks;
+        }
+      }
+      res.send(pendingAssignments);
+    });
 
     app.post("/submissions", verifyToken, async (req, res) => {
       const submissionData = req.body;
