@@ -84,14 +84,59 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
+    // crete assignments
+    app.post("/assignments", verifyToken, async (req, res) => {
+      const newAssignment = req.body;
+      const result = await assignmentCollection.insertOne(newAssignment);
+      res.send(result);
+    });
 
     // Assignments Details
     app.get("/assignments/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await assignmentCollection.findOne(query);
+
+      // Validate the ObjectId
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid ID format" });
+      }
+
+      try {
+        const query = { _id: new ObjectId(id) };
+        const result = await assignmentCollection.findOne(query);
+
+        if (!result) {
+          return res.status(404).send({ message: "Assignment not found" });
+        }
+
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res
+          .status(500)
+          .send({ message: "Server error while fetching assignment" });
+      }
+    });
+    // update
+    app.put("/assignments/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const { user } = req;
+      const assignment = await assignmentCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (assignment.email !== user.email) {
+        return res.status(403).send({ message: "Permission denied" });
+      }
+
+      const updatedData = req.body;
+      const result = await assignmentCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData }
+      );
+
       res.send(result);
     });
+    // delet
 
     // Submissions Details APIS
     app.get("/mysubmission", verifyToken, async (req, res) => {
@@ -123,7 +168,34 @@ async function run() {
       res.send(result);
     });
     // update api
+    app.put("/submission/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const { marks, feedback, status } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const user = req.user;
+      const submission = await submissionsCollection.findOne(filter);
 
+      if (submission.examinee === user.email) {
+        return res
+          .status(403)
+          .send({ message: "You can't mark your own submission." });
+      }
+
+      const updatedSubmission = {
+        marks,
+        feedback,
+        status,
+      };
+      const result = await submissionsCollection.updateOne(filter, {
+        $set: updatedSubmission,
+      });
+
+      if (result.modifiedCount === 1) {
+        res.status(200).send({ message: "Submission updated successfully" });
+      } else {
+        res.status(400).send({ message: "Failed to update submission" });
+      }
+    });
     // all pendings
     app.get("/pending-assignments", verifyToken, async (req, res) => {
       const pendingAssignments = await submissionsCollection
