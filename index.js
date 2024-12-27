@@ -9,7 +9,11 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: [
+      "http://localhost:5173",
+      "https://studyhard-fda66.web.app",
+      "https://studyhard-fda66.firebaseapp.com",
+    ],
     credentials: true,
   })
 );
@@ -45,7 +49,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // assignments Collections
     const assignmentCollection = client
@@ -65,7 +69,8 @@ async function run() {
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
         .send({ success: true });
     });
@@ -73,7 +78,8 @@ async function run() {
       res
         .clearCookie("token", {
           httpOnly: true,
-          secure: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
         .send({ success: true });
     });
@@ -159,8 +165,8 @@ async function run() {
     app.get("/mysubmission", verifyToken, async (req, res) => {
       const email = req.query.email;
       const query = { examinee: email };
-      if(req.user.email !== req.query.email){
-        return res.status(403).send({message:"forbiden access"})
+      if (req.user.email !== req.query.email) {
+        return res.status(403).send({ message: "forbiden access" });
       }
       const result = await submissionsCollection.find(query).toArray();
       for (const submission of result) {
@@ -190,7 +196,7 @@ async function run() {
     // update api
     app.put("/submission/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const { marks, feedback, status } = req.body;
+      const { obtainedMarks, feedback, status } = req.body;
       const filter = { _id: new ObjectId(id) };
       const user = req.user;
       const submission = await submissionsCollection.findOne(filter);
@@ -198,11 +204,14 @@ async function run() {
       if (submission.examinee === user.email) {
         return res
           .status(403)
-          .send({success: false, message: "You can't mark your own submission." });
+          .send({
+            success: false,
+            message: "You can't mark your own submission.",
+          });
       }
 
       const updatedSubmission = {
-        marks,
+        marks: obtainedMarks,
         feedback,
         status,
       };
@@ -211,9 +220,13 @@ async function run() {
       });
 
       if (result.modifiedCount === 1) {
-        res.status(200).send({success: true, message: "Submission updated successfully" });
+        res
+          .status(200)
+          .send({ success: true, message: "Submission updated successfully" });
       } else {
-        res.status(400).send({success: false, message: "Failed to update submission" });
+        res
+          .status(400)
+          .send({ success: false, message: "Failed to update submission" });
       }
     });
     // all pendings
@@ -239,10 +252,10 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
