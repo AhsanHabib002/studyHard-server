@@ -137,11 +137,31 @@ async function run() {
       res.send(result);
     });
     // delet
+    app.delete("/assignments/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id), email: req.user.email };
 
+      const result = await assignmentCollection.deleteOne(query);
+
+      if (result.deletedCount === 1) {
+        res.json({
+          success: true,
+          message: "Assignment deleted successfully.",
+        });
+      } else {
+        res.json({
+          success: false,
+          message: "Assignment not found or you don't have permission.",
+        });
+      }
+    });
     // Submissions Details APIS
     app.get("/mysubmission", verifyToken, async (req, res) => {
       const email = req.query.email;
       const query = { examinee: email };
+      if(req.user.email !== req.query.email){
+        return res.status(403).send({message:"forbiden access"})
+      }
       const result = await submissionsCollection.find(query).toArray();
       for (const submission of result) {
         const query1 = { _id: new ObjectId(submission.submit_id) };
@@ -178,7 +198,7 @@ async function run() {
       if (submission.examinee === user.email) {
         return res
           .status(403)
-          .send({ message: "You can't mark your own submission." });
+          .send({success: false, message: "You can't mark your own submission." });
       }
 
       const updatedSubmission = {
@@ -191,9 +211,9 @@ async function run() {
       });
 
       if (result.modifiedCount === 1) {
-        res.status(200).send({ message: "Submission updated successfully" });
+        res.status(200).send({success: true, message: "Submission updated successfully" });
       } else {
-        res.status(400).send({ message: "Failed to update submission" });
+        res.status(400).send({success: false, message: "Failed to update submission" });
       }
     });
     // all pendings
