@@ -196,7 +196,7 @@ async function run() {
     // update api
     app.put("/submission/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const { obtainedMarks, feedback, status } = req.body;
+      const { obtainmarks, feedback, status } = req.body;
       const filter = { _id: new ObjectId(id) };
       const user = req.user;
       const submission = await submissionsCollection.findOne(filter);
@@ -211,7 +211,7 @@ async function run() {
       }
 
       const updatedSubmission = {
-        marks: obtainedMarks,
+        obtainmarks,
         feedback,
         status,
       };
