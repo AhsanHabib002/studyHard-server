@@ -3,10 +3,12 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const app = express();
-const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Middleware
 app.use(
   cors({
     origin: [
@@ -20,24 +22,20 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+// JWT Token Verification Middleware
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
-
-  if (!token) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
+  if (!token) return res.status(401).json({ message: "Unauthorized access" });
 
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRECT, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: "unauthorized access" });
-    }
+    if (err) return res.status(401).json({ message: "Unauthorized access" });
     req.user = decoded;
     next();
   });
 };
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.9fdmi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+// MongoDB Connection
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.9fdmi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -48,225 +46,156 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    const db = client.db("StudyHard_database");
+    const assignmentCollection = db.collection("assignments");
+    const submissionsCollection = db.collection("submissions");
 
-    // assignments Collections
-    const assignmentCollection = client
-      .db("StudyHard_database")
-      .collection("assingments");
-    const submissionsCollection = client
-      .db("StudyHard_database")
-      .collection("submissions");
-
-    // auth api
+    // Auth APIs
     app.post("/jwt", (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRECT, {
         expiresIn: "9h",
       });
 
-      res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-        })
-        .send({ success: true });
-    });
-    app.post("/logout", (req, res) => {
-      res
-        .clearCookie("token", {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-        })
-        .send({ success: true });
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      }).send({ success: true });
     });
 
-    //   All assignments Api
+    app.post("/logout", (req, res) => {
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      }).send({ success: true });
+    });
+
+    // Assignments APIs
     app.get("/assignments", async (req, res) => {
-      const cursor = assignmentCollection.find();
-      const result = await cursor.toArray();
+      const { difficulty } = req.query;
+      const query = difficulty ? { difficulty } : {};
+      const result = await assignmentCollection.find(query).toArray();
       res.send(result);
     });
-    // crete assignments
+
     app.post("/assignments", verifyToken, async (req, res) => {
       const newAssignment = req.body;
       const result = await assignmentCollection.insertOne(newAssignment);
       res.send(result);
     });
 
-    // Assignments Details
     app.get("/assignments/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid ID format" });
 
-      // Validate the ObjectId
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid ID format" });
-      }
+      const result = await assignmentCollection.findOne({ _id: new ObjectId(id) });
+      if (!result) return res.status(404).json({ message: "Assignment not found" });
 
-      try {
-        const query = { _id: new ObjectId(id) };
-        const result = await assignmentCollection.findOne(query);
-
-        if (!result) {
-          return res.status(404).send({ message: "Assignment not found" });
-        }
-
-        res.send(result);
-      } catch (err) {
-        console.error(err);
-        res
-          .status(500)
-          .send({ message: "Server error while fetching assignment" });
-      }
+      res.send(result);
     });
-    // update
-    app.put("/assignments/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const { user } = req;
-      const assignment = await assignmentCollection.findOne({
-        _id: new ObjectId(id),
-      });
 
-      if (assignment.email !== user.email) {
-        return res.status(403).send({ message: "Permission denied" });
+    app.put("/assignments/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const assignment = await assignmentCollection.findOne({ _id: new ObjectId(id) });
+
+      if (assignment.email !== req.user.email) {
+        return res.status(403).json({ message: "Permission denied" });
       }
 
-      const updatedData = req.body;
       const result = await assignmentCollection.updateOne(
         { _id: new ObjectId(id) },
-        { $set: updatedData }
+        { $set: req.body }
       );
-
       res.send(result);
     });
-    // delet
+
     app.delete("/assignments/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id), email: req.user.email };
-
-      const result = await assignmentCollection.deleteOne(query);
-
-      if (result.deletedCount === 1) {
-        res.json({
-          success: true,
-          message: "Assignment deleted successfully.",
-        });
-      } else {
-        res.json({
-          success: false,
-          message: "Assignment not found or you don't have permission.",
-        });
-      }
+      const { id } = req.params;
+      const result = await assignmentCollection.deleteOne({ _id: new ObjectId(id), email: req.user.email });
+      res.json({
+        success: result.deletedCount === 1,
+        message: result.deletedCount === 1 ? "Assignment deleted successfully." : "Assignment not found or you don't have permission."
+      });
     });
-    // Submissions Details APIS
+
+    // Submissions APIs
     app.get("/mysubmission", verifyToken, async (req, res) => {
       const email = req.query.email;
-      const query = { examinee: email };
-      if (req.user.email !== req.query.email) {
-        return res.status(403).send({ message: "forbiden access" });
-      }
-      const result = await submissionsCollection.find(query).toArray();
-      for (const submission of result) {
-        const query1 = { _id: new ObjectId(submission.submit_id) };
-        const result1 = await assignmentCollection.findOne(query1);
-        if (result1) {
-          submission.title = result1.title;
-          submission.marks = result1.marks;
+      if (req.user.email !== email) return res.status(403).json({ message: "Forbidden access" });
+
+      const result = await submissionsCollection.find({ examinee: email }).toArray();
+      for (let submission of result) {
+        const assignment = await assignmentCollection.findOne({ _id: new ObjectId(submission.submit_id) });
+        if (assignment) {
+          submission.title = assignment.title;
+          submission.marks = assignment.marks;
         }
       }
       res.send(result);
     });
-    // all submission
+
     app.get("/submission", verifyToken, async (req, res) => {
-      const cursor = submissionsCollection.find();
-      const result = await cursor.toArray();
+      const result = await submissionsCollection.find().toArray();
       res.send(result);
     });
 
-    // Submission by id
     app.get("/submission/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await submissionsCollection.findOne(query);
+      const { id } = req.params;
+      const result = await submissionsCollection.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
-    // update api
-    app.put("/submission/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const { obtainmarks, feedback, status } = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const user = req.user;
-      const submission = await submissionsCollection.findOne(filter);
 
-      if (submission.examinee === user.email) {
-        return res
-          .status(403)
-          .send({
-            success: false,
-            message: "You can't mark your own submission.",
-          });
+    app.put("/submission/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const { obtainmarks, feedback, status } = req.body;
+      const submission = await submissionsCollection.findOne({ _id: new ObjectId(id) });
+
+      if (submission.examinee === req.user.email) {
+        return res.status(403).json({ success: false, message: "You can't mark your own submission." });
       }
 
-      const updatedSubmission = {
-        obtainmarks,
-        feedback,
-        status,
-      };
-      const result = await submissionsCollection.updateOne(filter, {
-        $set: updatedSubmission,
-      });
+      const result = await submissionsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { obtainmarks, feedback, status } }
+      );
 
       if (result.modifiedCount === 1) {
-        res
-          .status(200)
-          .send({ success: true, message: "Submission updated successfully" });
+        res.status(200).json({ success: true, message: "Submission updated successfully" });
       } else {
-        res
-          .status(400)
-          .send({ success: false, message: "Failed to update submission" });
+        res.status(400).json({ success: false, message: "Failed to update submission" });
       }
     });
-    // all pendings
+
     app.get("/pending-assignments", verifyToken, async (req, res) => {
-      const pendingAssignments = await submissionsCollection
-        .find({ status: "pending" })
-        .toArray();
-      for (const submission of pendingAssignments) {
-        const query1 = { _id: new ObjectId(submission.submit_id) };
-        const result1 = await assignmentCollection.findOne(query1);
-        if (result1) {
-          submission.title = result1.title;
-          submission.marks = result1.marks;
+      const result = await submissionsCollection.find({ status: "pending" }).toArray();
+      for (let submission of result) {
+        const assignment = await assignmentCollection.findOne({ _id: new ObjectId(submission.submit_id) });
+        if (assignment) {
+          submission.title = assignment.title;
+          submission.marks = assignment.marks;
         }
       }
-      res.send(pendingAssignments);
+      res.send(result);
     });
 
     app.post("/submissions", verifyToken, async (req, res) => {
-      const submissionData = req.body;
-      const result = await submissionsCollection.insertOne(submissionData);
+      const result = await submissionsCollection.insertOne(req.body);
       res.send(result);
     });
 
-    // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
-    // console.log(
-    //   "Pinged your deployment. You successfully connected to MongoDB!"
-    // );
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+  } catch (err) {
+    console.error(err);
   }
 }
+
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("study hard is started");
+  res.send("Study Hard API is running.");
 });
 
 app.listen(port, () => {
-  console.log(`Study hard: ${port}`);
+  console.log(`Study Hard server is listening on port ${port}`);
 });
